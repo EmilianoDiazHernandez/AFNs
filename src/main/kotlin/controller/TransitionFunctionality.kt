@@ -32,7 +32,7 @@ fun DrawScope.drawTransitions(transitions: List<TransitionCoords>) {
     )
 
     groupTransitions.forEach { (key, chars) ->
-        drawArrow(key.first, key.second, chars, Color.Black)
+        drawArrow(key.first, key.second, chars, Color(0xFF444444))
         //println("Q1: " + transition.coordState1.id + "  --" + transition.id.char + "-->  " + "Q2: " + transition.id.goTo)
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import data.Transition
 import org.jetbrains.skia.*
 import kotlin.math.atan2
@@ -17,77 +18,103 @@ import kotlin.math.sin
 data class TransitionCoords (val coordState1: StateCoords, val coordState2: StateCoords, val id: Transition)
 
 fun DrawScope.drawArrow(from: Offset, to: Offset, chars: List<Char>, color: Color) {
+    val strokeWidth = 2.5f
+    val arrowSize = 12f
+    val stateRadius = 30f
+    val labelFont = Font(Typeface.makeFromName("Segoe UI", FontStyle.BOLD_ITALIC), 14f)
+    val labelPaint = org.jetbrains.skia.Paint().apply {
+        this.color = Color(0xFF333333).toArgb()
+        isAntiAlias = true
+    }
+    val labelBgPaint = org.jetbrains.skia.Paint().apply {
+        this.color = Color.White.copy(alpha = 0.8f).toArgb()
+    }
+
     if (from == to) {
-        val radius = 30f
-        val center = Offset(from.x, from.y - radius)
+        val loopRadius = 25f
+        val center = Offset(from.x, from.y - stateRadius - loopRadius + 5f)
 
         drawArc(
             color = color,
-            startAngle = -30f,
-            sweepAngle = 320f,
+            startAngle = 40f,
+            sweepAngle = 280f,
             useCenter = false,
-            topLeft = Offset(center.x - radius, center.y - radius),
-            size = Size(radius * 2, radius * 2),
-            style = Stroke(width = 1f)
+            topLeft = Offset(center.x - loopRadius, center.y - loopRadius),
+            size = Size(loopRadius * 2, loopRadius * 2),
+            style = Stroke(width = strokeWidth)
         )
 
-        // Posición de las letras en el arco
-        val textPosition = Offset(from.x + 13f, from.y - 48f)
-
-        drawIntoCanvas { canvas ->
-            val textLine =
-                TextLine.make(chars.joinToString(","), Font(Typeface.makeFromName("Arial", FontStyle.ITALIC), 15f))
-            canvas.nativeCanvas.drawTextLine(textLine, textPosition.x, textPosition.y, Paint())
-        }
-
+        // Arrowhead for loop
+        val arrowAngle = Math.toRadians(40.0).toFloat()
+        val arrowTip = Offset(
+            center.x + loopRadius * cos(arrowAngle),
+            center.y + loopRadius * sin(arrowAngle)
+        )
+        
         drawPath(
             path = Path().apply {
-                moveTo(from.x + 30f, from.y - 15f)
-                lineTo(from.x + 22f, from.y - 10f)
-                lineTo(from.x + 23f, from.y - 20f)
+                moveTo(arrowTip.x, arrowTip.y)
+                lineTo(arrowTip.x + 5f, arrowTip.y + 12f)
+                lineTo(arrowTip.x - 8f, arrowTip.y + 5f)
+                close()
             },
-            color = Color.Black,
+            color = color,
         )
 
+        // Text positioning
+        val text = chars.joinToString(",")
+        val textLine = TextLine.make(text, labelFont)
+        val textPos = Offset(center.x - textLine.width / 2, center.y - loopRadius - 5f)
+
+        drawIntoCanvas { canvas ->
+            canvas.nativeCanvas.drawRect(
+                org.jetbrains.skia.Rect.makeXYWH(textPos.x - 2f, textPos.y - textLine.height, textLine.width + 4f, textLine.height + 2f),
+                labelBgPaint
+            )
+            canvas.nativeCanvas.drawTextLine(textLine, textPos.x, textPos.y, labelPaint)
+        }
+
     } else {
-        // Caso normal de transición entre diferentes estados
         val direction = Offset(to.x - from.x, to.y - from.y)
         val length = direction.getDistance()
 
         val unitDirection = if (length > 0) Offset(direction.x / length, direction.y / length) else Offset(0f, 0f)
-        val adjustedTo = Offset(to.x - unitDirection.x * 25f, to.y - unitDirection.y * 25f)
+        val startPoint = Offset(from.x + unitDirection.x * stateRadius, from.y + unitDirection.y * stateRadius)
+        val endPoint = Offset(to.x - unitDirection.x * stateRadius, to.y - unitDirection.y * stateRadius)
 
-        drawLine(color = color, start = from, end = adjustedTo)
+        drawLine(color = color, start = startPoint, end = endPoint, strokeWidth = strokeWidth)
 
-        val angle = atan2(adjustedTo.y - from.y, adjustedTo.x - from.x)
-        val arrowSize = 10f
+        val angle = atan2(endPoint.y - from.y, endPoint.x - from.x)
         val arrowPoint1 = Offset(
-            x = adjustedTo.x - (arrowSize * cos(angle - Math.PI / 6)).toFloat(),
-            y = adjustedTo.y - (arrowSize * sin(angle - Math.PI / 6)).toFloat()
+            x = endPoint.x - (arrowSize * cos(angle - Math.PI / 6)).toFloat(),
+            y = endPoint.y - (arrowSize * sin(angle - Math.PI / 6)).toFloat()
         )
         val arrowPoint2 = Offset(
-            x = adjustedTo.x - (arrowSize * cos(angle + Math.PI / 6)).toFloat(),
-            y = adjustedTo.y - (arrowSize * sin(angle + Math.PI / 6)).toFloat()
+            x = endPoint.x - (arrowSize * cos(angle + Math.PI / 6)).toFloat(),
+            y = endPoint.y - (arrowSize * sin(angle + Math.PI / 6)).toFloat()
         )
 
         val path = Path().apply {
-            moveTo(adjustedTo.x, adjustedTo.y)
+            moveTo(endPoint.x, endPoint.y)
             lineTo(arrowPoint1.x, arrowPoint1.y)
             lineTo(arrowPoint2.x, arrowPoint2.y)
             close()
         }
+        drawPath(path = path, color = color)
 
-        // Posición de las letras
-        val midPoint = Offset((from.x + adjustedTo.x) / 2, (from.y + adjustedTo.y) / 2)
-        val perpendicularOffset = Offset(unitDirection.y, -unitDirection.x) * 15f
-        val textPosition = midPoint + perpendicularOffset
+        // Labels
+        val midPoint = Offset((from.x + to.x) / 2, (from.y + to.y) / 2)
+        val perpendicularOffset = Offset(unitDirection.y, -unitDirection.x) * 18f
+        val text = chars.joinToString(",")
+        val textLine = TextLine.make(text, labelFont)
+        val textPos = midPoint + perpendicularOffset - Offset(textLine.width / 2, -textLine.height / 2)
 
         drawIntoCanvas { canvas ->
-            val textLine =
-                TextLine.make(chars.joinToString(","), Font(Typeface.makeFromName("Arial", FontStyle.ITALIC), 15f))
-            canvas.nativeCanvas.drawTextLine(textLine, textPosition.x, textPosition.y, Paint())
+            canvas.nativeCanvas.drawRect(
+                org.jetbrains.skia.Rect.makeXYWH(textPos.x - 2f, textPos.y - textLine.height, textLine.width + 4f, textLine.height + 2f),
+                labelBgPaint
+            )
+            canvas.nativeCanvas.drawTextLine(textLine, textPos.x, textPos.y, labelPaint)
         }
-
-        drawPath(path = path, color = color)
     }
 }
